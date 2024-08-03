@@ -4,6 +4,8 @@ import static org.springframework.security.config.Customizer.withDefaults;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.interfaces.RSAPublicKey;
+import java.util.UUID;
 
 import javax.sql.DataSource;
 
@@ -19,8 +21,16 @@ import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.jdbc.JdbcDaoImpl;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.provisioning.JdbcUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.proc.SecurityContext;
 
 @Configuration
 public class JwtSecurityConfiguration {
@@ -81,6 +91,7 @@ public class JwtSecurityConfiguration {
 		return new BCryptPasswordEncoder();
 	}
 
+	// 1 . create key pair
 	@Bean
 	public KeyPair keyPair() {
 		try {
@@ -90,11 +101,38 @@ public class JwtSecurityConfiguration {
 		} catch (Exception ex) {
 			throw new RuntimeException(ex);
 		}
-
 	}
 
-//	@Bean
-//	public JwtDecoder jwtDecoder() {
-//		return decoder;
-//	}
+	// 2. create RSA Key Object using Key Pair created in method 1(above method)
+	@Bean
+	public RSAKey rsaKey(KeyPair keyPair) {
+		return new RSAKey.Builder((RSAPublicKey) keyPair.getPublic()).privateKey(keyPair.getPrivate())
+				.keyID(UUID.randomUUID().toString()).build();
+	}
+
+	// 3. creating JWK Source (json web key source)
+//	a) creating JWKSet using the RSA Key object created in method2
+//	b) creating JWKSource using JWKSet 
+	@Bean
+	public JWKSource<SecurityContext> jwkSource(RSAKey rsaKey) {
+		var jwkSet = new JWKSet(rsaKey);
+
+//		var jwkSource=new JWKSource() {
+//
+//			@Override
+//			public List get(JWKSelector jwkSelector, SecurityContext context) throws KeySourceException {
+//				return jwkSelector.select(jwkSet);
+//			}
+//			
+//		};
+//		return jwkSource;
+
+		return (jwkSelector, context) -> jwkSelector.select(jwkSet);
+	}
+	
+	// 4. JwtDecoder used RSA Key
+	@Bean
+	public JwtDecoder jwtDecoder(RSAKey rsaKey) throws JOSEException {
+		return NimbusJwtDecoder.withPublicKey(rsaKey.toRSAPublicKey()).build();
+	}
 }
